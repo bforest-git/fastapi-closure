@@ -107,7 +107,8 @@ def sync_tracker_issues(db_session) -> list[dict]:
                         "message_id": closure.message_id,
                         "messenger": closure.messenger,
                         "result": issue_result,
-                        "tracker_text": issue_text
+                        "tracker_text": issue_text,
+                        "closure_id": closure.id
                     })
                 
                 # Сохраняем изменения
@@ -116,5 +117,26 @@ def sync_tracker_issues(db_session) -> list[dict]:
         except Exception as e:
             logger.error(f"Error processing issue {issue.key}: {e}")
             db_session.rollback()
+    
+
+    try:
+        from app.models import Closure
+        unnotified_closures = db_session.query(Closure).filter(
+            Closure.is_answered == False,
+            Closure.status.isnot(None),
+            Closure.result.isnot(None)
+        ).all()
+        
+        for closure in unnotified_closures:
+            notifications.append({
+                "chat_id": closure.chat_id,
+                "message_id": closure.message_id,
+                "messenger": closure.messenger,
+                "result": closure.result,
+                "tracker_text": closure.tracker_text,
+                "closure_id": closure.id
+            })
+    except Exception as e:
+        logger.error(f"Error processing unnotified closures: {e}")
     
     return notifications

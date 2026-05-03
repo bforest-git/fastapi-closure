@@ -1,6 +1,10 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from dotenv import load_dotenv
+
+load_dotenv("telegram-bot/.env")
+
 from fastapi import FastAPI
 from app.api import closures
 from app.database import engine, Base

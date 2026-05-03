@@ -37,5 +37,10 @@ def migrate_database():
                 conn.execute(text("ALTER TABLE closures ADD COLUMN tracker_text TEXT"))
                 conn.commit()
                 
+            if 'is_answered' not in columns:
+                logger.info("Adding 'is_answered' column to closures table")
+                conn.execute(text("ALTER TABLE closures ADD COLUMN is_answered BOOLEAN DEFAULT 0 NOT NULL"))
+                conn.commit()
+                
     except Exception as e:
         logger.error(f"Database migration error: {e}")

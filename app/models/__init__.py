@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, BigInteger, DateTime
+from sqlalchemy import Column, Integer, String, BigInteger, DateTime, Boolean
 from app.database import Base
 
 class Closure(Base):
@@ -14,3 +14,4 @@ class Closure(Base):
     status = Column(String, nullable=True)
     result = Column(String, nullable=True)
     tracker_text = Column(String, nullable=True)
+    is_answered = Column(Boolean, default=False, nullable=False)
