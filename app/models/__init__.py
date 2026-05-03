@@ -10,3 +10,5 @@ class Closure(Base):
     chat_id = Column(BigInteger)
     message_id = Column(BigInteger)
     sent_at = Column(DateTime)
+    tracker_key = Column(String, nullable=True)
+    status = Column(String, nullable=True)
