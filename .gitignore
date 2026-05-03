@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+app/__pycache__/
+*.py[cod]
+*.pyc
+
+# Virtual environments
+.venv/
+venv/
+
+# Environment variables / secrets
+.env
+telegram-bot/.env
