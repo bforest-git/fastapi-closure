@@ -65,8 +65,8 @@ def sync_tracker_issues(db_session) -> list[dict]:
     client = Startrek('Startrek', token=TRACKER_TOKEN)
     
     try:
-        # Get tickets updated in the last 24 hours
-        query = f'Queue: {TRACKER_QUEUE} Updated: >now()-24h'
+        # Get tickets updated in the last 1 hour
+        query = f'Queue: {TRACKER_QUEUE} Updated: >now()-1h'
         issues = client.issues.find(query=query)
     except Exception as e:
         return []
