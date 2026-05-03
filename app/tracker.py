@@ -1,5 +1,7 @@
 import os
 import traceback
+import io
+import asyncio
 from startrek_client import Startrek
 import logging
 
@@ -8,6 +10,7 @@ logger = logging.getLogger(__name__)
 # Read configuration from environment variables
 TRACKER_TOKEN = os.environ.get("TRACKER_TOKEN")
 TRACKER_QUEUE = os.environ.get("TRACKER_QUEUE")
+
 
 def create_tracker_issue(closure) -> str:
     """
@@ -47,6 +50,7 @@ def create_tracker_issue(closure) -> str:
     # Return the issue key
     return issue.key
 
+
 def sync_tracker_issues(db_session) -> list[dict]:
     """
     Синхронизирует тикеты из Яндекс Трекера с локальной БД.
@@ -79,8 +83,8 @@ def sync_tracker_issues(db_session) -> list[dict]:
         try:
             # Получаем данные из тикета
             issue_key = issue.key
-            issue_result = str(issue.result) if issue.result else None
             issue_status = issue.status.key
+            issue_result = str(issue.result) if issue.result else None
             issue_text = str(issue.text) if issue.text else None
 
             # Ищем запись в БД по tracker_key
@@ -145,3 +149,75 @@ def sync_tracker_issues(db_session) -> list[dict]:
         logger.error(f"[sync_tracker_issues] Error processing unnotified closures: {e}", exc_info=True)
 
     return notifications
+
+
+async def attach_files_to_issue(issue_key: str, files: list):
+    """
+    Attach files to a Yandex Tracker issue and create a comment with those attachments.
+    Args:
+        issue_key (str): The key of the issue to attach files to
+        files (list): List of UploadFile objects from FastAPI
+    """
+    if not TRACKER_TOKEN:
+        raise EnvironmentError("TRACKER_TOKEN environment variable is not set")
+
+    # If no files, don't create a comment
+    if not files:
+        logger.info(f"No files to attach to issue {issue_key}, skipping comment creation")
+        return
+
+    client = Startrek('Startrek', token=TRACKER_TOKEN)
+
+    # Read all file contents upfront (must be done in async context before executor).
+    # _upload_attachments() calls Attachments.create(attachment) for each item,
+    # which calls _create_from_file(file) and uses _get_filename(file) to get the name
+    # via getattr(file, 'name', None). So we subclass BytesIO to carry the filename.
+    class NamedBytesIO(io.BytesIO):
+        def __init__(self, data: bytes, name: str):
+            super().__init__(data)
+            self.name = name
+
+    file_objects = []
+    for upload_file in files:
+        try:
+            content = await upload_file.read()
+            if not content:
+                logger.warning(f"File {upload_file.filename!r} is empty (0 bytes), skipping")
+                continue
+            filename = upload_file.filename or "unnamed_file"
+            file_objects.append(NamedBytesIO(content, filename))
+            logger.info(f"Read file {filename!r} ({len(content)} bytes) for issue {issue_key}")
+        except Exception as e:
+            logger.error(f"Failed to read file {upload_file.filename!r}: {e}", exc_info=True)
+
+    if not file_objects:
+        logger.info(f"No readable files for issue {issue_key}, skipping comment creation")
+        return
+
+    # Create a comment with attachments in one call.
+    # IssueComments.create() calls _upload_attachments(self, kwargs) which:
+    #   1. Pops 'attachments' from kwargs
+    #   2. For each item calls Attachments.create(item) → uploads via /v2/attachments/
+    #   3. Collects returned IDs and sets kwargs['attachmentIds'] = [...]
+    #   4. Then the comment is created with those IDs bound to it
+    # This is the only correct way to attach files to a comment in Tracker API.
+    def create_comment_with_attachments(fo=file_objects):
+        logger.info(
+            f"[attach] Creating comment with {len(fo)} attachment(s) "
+            f"for issue {issue_key}: {[f.name for f in fo]!r}"
+        )
+        result = client.issues[issue_key].comments.create(
+            text="Медиафайлы перекрытия",
+            attachments=fo,
+        )
+        logger.info(
+            f"[attach] Comment created id={getattr(result, 'id', None)!r}, "
+            f"attachments={getattr(result, 'attachments', 'N/A')!r}"
+        )
+        return result
+
+    try:
+        await asyncio.get_running_loop().run_in_executor(None, create_comment_with_attachments)
+        logger.info(f"Created comment with {len(file_objects)} attachment(s) for issue {issue_key}")
+    except Exception as e:
+        logger.error(f"Failed to create comment with attachments for issue {issue_key}: {e}", exc_info=True)

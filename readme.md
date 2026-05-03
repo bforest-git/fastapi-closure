@@ -11,46 +11,58 @@ FastAPI project structure.
 │   ├── main.py
 │   ├── api/
 │   │   ├── __init__.py
-│   │   └── items.py
+│   │   └── closures.py
 │   ├── models/
 │   │   └── __init__.py
 │   ├── schemas/
 │   │   └── __init__.py
-│   └── database/
-│       └── __init__.py
+│   ├── database/
+│   │   └── __init__.py
+│   ├── sync.py
+│   └── tracker.py
 ├── main.py
 ├── requirements.txt
-└── README.md
+├── readme.md
+└── telegram-bot/
+    ├── bot.py
+    ├── requirements.txt
+    └── .env.example
 ```
-
-## Installation
-
-1. Create a virtual environment:
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
-
-2. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-## Running the Application
-
-```bash
-uvicorn main:app --reload
-```
-
-Or:
-
-```bash
-python main.py
-```
-
-The application will be available at `http://localhost:8001`.
 
 ## API Documentation
 
-- Swagger UI: `http://localhost:8001/docs`
-- ReDoc: `http://localhost:8001/redoc`
+- Swagger UI: `http://localhost:8000/docs`
+- ReDoc: `http://localhost:8000/redoc`
+
+## Развертывание приложения
+
+Приложение состоит из трех основных компонентов:
+1. FastAPI-бэкенд для обработки данных
+2. Синхронизация с Яндекс.Трекером для создания и отслеживания тикетов
+3. Telegram-бот для приема сообщений от пользователей
+
+### Запуск всех компонентов
+
+Для полноценной работы приложения необходимо запустить:
+1. FastAPI-бэкенд (из корневой директории)
+2. Telegram-бота (из директории telegram-bot)
+
+Оба компонента должны работать одновременно для корректной обработки сообщений.
+
+```bash
+python3 main.py
+
+cd telegram-bot
+python3 bot.py
+```
+
+### Использование приложения
+
+1. Пользователи отправляют сообщения в Telegram-бота с хештегами:
+   - `#перекрытие`
+   - `#roads`
+   - `#closure`
+
+2. Сообщения автоматически сохраняются в базу данных и создаются тикеты в Яндекс.Трекере
+
+3. При обновлении тикетов в Яндекс.Трекере, изменения синхронизируются с базой данных и отправляются уведомления пользователям в Telegram
