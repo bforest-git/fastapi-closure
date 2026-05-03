@@ -3,3 +3,4 @@ uvicorn>=0.15.0
 sqlalchemy>=2.0.0
 pydantic>=2.0.0
 startrek-client
+python-dotenv>=1.0.0

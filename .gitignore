@@ -11,3 +11,6 @@ venv/
 # Environment variables / secrets
 .env
 telegram-bot/.env
+
+# Database
+closures.db

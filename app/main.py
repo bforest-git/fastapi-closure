@@ -1,6 +1,13 @@
+import logging
 from fastapi import FastAPI
 from app.api import closures
 from app.database import engine, Base
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+)
 
 # Create tables
 Base.metadata.create_all(bind=engine)

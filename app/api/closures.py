@@ -1,4 +1,5 @@
 import logging
+import traceback
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
@@ -26,7 +27,7 @@ def create_closure(closure: ClosureCreate, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(db_closure)
     except Exception as e:
-        logger.error(f"Failed to create tracker issue for closure {db_closure.id}: {e}")
+        logger.error(f"Failed to create tracker issue for closure {db_closure.id}: {e}\n{traceback.format_exc()}")
         # tracker_key остается None
     
     return db_closure

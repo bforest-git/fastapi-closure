@@ -1,5 +1,9 @@
 import os
-from startrek_client import StartrekClient
+import traceback
+from startrek_client import Startrek
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Read configuration from environment variables
 TRACKER_TOKEN = os.environ.get("TRACKER_TOKEN")
@@ -26,11 +30,11 @@ def create_tracker_issue(closure) -> str:
     if not TRACKER_QUEUE:
         raise EnvironmentError("TRACKER_QUEUE environment variable is not set")
     
-    client = StartrekClient('Startrek', token=TRACKER_TOKEN)
+    client = Startrek('Startrek', token=TRACKER_TOKEN)
     
     # Create issue summary
     summary = f"Сообщение о перекрытии из {closure.messenger}"
-    description = f"Отправлено {closure.send_at}\n\n{closure.text}"
+    description = f"Отправлено {closure.sent_at}\n\n{closure.text}"
     
     # Create the issue
     issue = client.issues.create(
