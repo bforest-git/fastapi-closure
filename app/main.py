@@ -1,5 +1,4 @@
 import asyncio
-import logging
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 
@@ -11,11 +10,6 @@ from app.api import closures
 from app.database import engine, Base
 from app.sync import sync_loop
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-)
 
 # Create tables
 Base.metadata.create_all(bind=engine)
@@ -26,7 +20,7 @@ migrate_database()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Запуск фоновой задачи синхронизации
+    # Start background sync task
     task = asyncio.create_task(sync_loop())
     yield
     task.cancel()

@@ -1,8 +1,6 @@
 from sqlalchemy import create_engine, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-import logging
-
 SQLALCHEMY_DATABASE_URL = "sqlite:///./closures.db"
 
 engine = create_engine(
@@ -19,28 +17,24 @@ def get_db():
         db.close()
 
 def migrate_database():
-    """Добавляет новые колонки в таблицу closures если они отсутствуют"""
-    logger = logging.getLogger(__name__)
+    """Adds new columns to the closures table if they are missing"""
     try:
         with engine.connect() as conn:
-            # Проверяем существование колонки result
+            # Check for the existence of the result column
             result = conn.execute(text("PRAGMA table_info(closures)")).fetchall()
             columns = [row[1] for row in result]
             
             if 'result' not in columns:
-                logger.info("Adding 'result' column to closures table")
                 conn.execute(text("ALTER TABLE closures ADD COLUMN result TEXT"))
                 conn.commit()
             
             if 'tracker_text' not in columns:
-                logger.info("Adding 'tracker_text' column to closures table")
                 conn.execute(text("ALTER TABLE closures ADD COLUMN tracker_text TEXT"))
                 conn.commit()
                 
             if 'is_answered' not in columns:
-                logger.info("Adding 'is_answered' column to closures table")
                 conn.execute(text("ALTER TABLE closures ADD COLUMN is_answered BOOLEAN DEFAULT 0 NOT NULL"))
                 conn.commit()
                 
     except Exception as e:
-        logger.error(f"Database migration error: {e}")
+        pass

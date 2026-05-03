@@ -1,4 +1,3 @@
-import logging
 import traceback
 from fastapi import APIRouter, Depends, HTTPException, Form, UploadFile, File
 from sqlalchemy.orm import Session
@@ -8,9 +7,6 @@ from datetime import datetime
 from app.database import get_db
 from app.models import Closure
 from app.schemas import ClosureCreate, ClosureRead, ClosureUpdate
-
-logger = logging.getLogger(__name__)
-
 router = APIRouter()
 
 @router.post("/", response_model=ClosureRead, status_code=201)
@@ -39,7 +35,7 @@ async def create_closure(
     db.commit()
     db.refresh(db_closure)
     
-    # Попытка создания тикета в Яндекс Трекере
+    # Attempt to create a ticket in Yandex Tracker
     try:
         from app.tracker import create_tracker_issue, attach_files_to_issue
         tracker_key = create_tracker_issue(db_closure)
@@ -50,14 +46,14 @@ async def create_closure(
             try:
                 await attach_files_to_issue(tracker_key, files)
             except Exception as e:
-                logger.error(f"Failed to attach files to tracker issue {tracker_key}: {e}\n{traceback.format_exc()}")
+                pass
                 # Continue even if file attachment fails
         
         db.commit()
         db.refresh(db_closure)
     except Exception as e:
-        logger.error(f"Failed to create tracker issue for closure {db_closure.id}: {e}\n{traceback.format_exc()}")
-        # tracker_key остается None
+        pass
+        # tracker_key remains None
     
     # Clean up uploaded files
     if files:

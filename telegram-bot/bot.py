@@ -1,5 +1,4 @@
 import asyncio
-import logging
 import re
 import httpx
 import io
@@ -11,9 +10,6 @@ from collections import defaultdict
 
 # Load environment variables
 load_dotenv()
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
 
 # Initialize bot and dispatcher
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -163,7 +159,7 @@ async def process_media_group(media_group_id):
             
                     
             except Exception as e:
-                logging.error(f"Error downloading media files from message {msg.message_id}: {e}")
+                pass
                 # Continue with other messages even if one fails
         
         # Send POST request to FastAPI
@@ -191,17 +187,14 @@ async def process_media_group(media_group_id):
                 else:
                     await first_message_with_hashtags.answer("✅ Сообщение о перекрытии сохранено")
             else:
-                logging.error(f"FastAPI returned error: {response.status_code} - {response.text}")
                 await first_message_with_hashtags.answer("❌ Ошибка при сохранении сообщения")
                 
     except httpx.RequestError as e:
         # Handle network errors
-        logging.error(f"Failed to connect to FastAPI: {e}")
         if first_message_with_hashtags:
             await first_message_with_hashtags.answer("❌ Ошибка при сохранении сообщения")
     except Exception as e:
         # Handle other errors
-        logging.error(f"Unexpected error: {e}")
         if first_message_with_hashtags:
             await first_message_with_hashtags.answer("❌ Ошибка при сохранении сообщения")
 
@@ -238,7 +231,7 @@ async def closure_handler(message: types.Message):
                     await timer
                     await process_media_group(message.media_group_id)
                 except Exception as e:
-                    logging.error(f"Error processing media group: {e}")
+                    pass
         return
     
     # Handle single messages (without media_group_id)
@@ -334,7 +327,6 @@ async def closure_handler(message: types.Message):
                 file_names.append(filename)
                 
         except Exception as e:
-            logging.error(f"Error downloading media files: {e}")
             # Continue with text-only message if file download fails
             files = []
             file_names = []
@@ -364,16 +356,13 @@ async def closure_handler(message: types.Message):
                 else:
                     await message.answer("✅ Сообщение о перекрытии сохранено")
             else:
-                logging.error(f"FastAPI returned error: {response.status_code} - {response.text}")
                 await message.answer("❌ Ошибка при сохранении сообщения")
                 
     except httpx.RequestError as e:
         # Handle network errors
-        logging.error(f"Failed to connect to FastAPI: {e}")
         await message.answer("❌ Ошибка при сохранении сообщения")
     except Exception as e:
         # Handle other errors
-        logging.error(f"Unexpected error: {e}")
         await message.answer("❌ Ошибка при сохранении сообщения")
 
 async def main():
@@ -387,5 +376,4 @@ async def main():
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    logging.info("Starting bot...")
     asyncio.run(main())

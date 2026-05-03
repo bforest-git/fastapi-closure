@@ -34,20 +34,20 @@ FastAPI project structure.
 - Swagger UI: `http://localhost:8000/docs`
 - ReDoc: `http://localhost:8000/redoc`
 
-## Развертывание приложения
+## Application Deployment
 
-Приложение состоит из трех основных компонентов:
-1. FastAPI-бэкенд для обработки данных
-2. Синхронизация с Яндекс.Трекером для создания и отслеживания тикетов
-3. Telegram-бот для приема сообщений от пользователей
+The application consists of three main components:
+1. FastAPI backend for data processing
+2. Synchronization with Yandex.Tracker for creating and tracking tickets
+3. Telegram bot for receiving messages from users
 
-### Запуск всех компонентов
+### Running all components
 
-Для полноценной работы приложения необходимо запустить:
-1. FastAPI-бэкенд (из корневой директории)
-2. Telegram-бота (из директории telegram-bot)
+For the application to work properly, you need to run:
+1. FastAPI backend (from the root directory)
+2. Telegram bot (from the telegram-bot directory)
 
-Оба компонента должны работать одновременно для корректной обработки сообщений.
+Both components must run simultaneously for correct message processing.
 
 ```bash
 python3 main.py
@@ -56,13 +56,13 @@ cd telegram-bot
 python3 bot.py
 ```
 
-### Использование приложения
+### Using the application
 
-1. Пользователи отправляют сообщения в Telegram-бота с хештегами:
+1. Users send messages to the Telegram bot with hashtags:
    - `#перекрытие`
    - `#roads`
    - `#closure`
 
-2. Сообщения автоматически сохраняются в базу данных и создаются тикеты в Яндекс.Трекере
+2. Messages are automatically saved to the database and tickets are created in Yandex.Tracker
 
-3. При обновлении тикетов в Яндекс.Трекере, изменения синхронизируются с базой данных и отправляются уведомления пользователям в Telegram
+3. When tickets are updated in Yandex.Tracker, changes are synchronized with the database and notifications are sent to users in Telegram
