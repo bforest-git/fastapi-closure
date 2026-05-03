@@ -46,3 +46,75 @@ def create_tracker_issue(closure) -> str:
     
     # Return the issue key
     return issue.key
+
+def sync_tracker_issues(db_session) -> list[dict]:
+    """
+    Синхронизирует тикеты из Яндекс Трекера с локальной БД.
+    
+    Параметры:
+    - db_session: Сессия SQLAlchemy для работы с БД
+    
+    Возвращает:
+    - list[dict]: Список словарей с данными для уведомления пользователей
+    """
+    if not TRACKER_TOKEN:
+        raise EnvironmentError("TRACKER_TOKEN environment variable is not set")
+    
+    if not TRACKER_QUEUE:
+        raise EnvironmentError("TRACKER_QUEUE environment variable is not set")
+    
+    client = Startrek('Startrek', token=TRACKER_TOKEN)
+    
+    try:
+        # Получаем тикеты, обновленные за последние 24 часа
+        query = f'Queue: {TRACKER_QUEUE} Updated: >now()-24h'
+        issues = client.issues.find(query=query)
+    except Exception as e:
+        logger.error(f"Failed to fetch issues from Tracker: {e}")
+        return []
+    
+    notifications = []
+    
+    for issue in issues:
+        try:
+            # Получаем данные из тикета
+            issue_key = issue.key
+            issue_result = issue.result
+            issue_status = issue.status.key
+            if issue.text:
+                issue_text = issue.text
+            else:
+                issue_text = None
+            
+            # Ищем запись в БД по tracker_key
+            from app.models import Closure
+            closure = db_session.query(Closure).filter(Closure.tracker_key == issue_key).first()
+            
+            if closure:
+                # Проверяем, изменился ли result
+                old_result = closure.result
+                result_changed = old_result != issue_result
+                
+                # Обновляем поля в БД
+                closure.status = issue_status
+                closure.result = issue_result
+                closure.tracker_text = issue_text
+                
+                # Если result изменился, добавляем в список уведомлений
+                if result_changed and issue_result is not None:
+                    notifications.append({
+                        "chat_id": closure.chat_id,
+                        "message_id": closure.message_id,
+                        "messenger": closure.messenger,
+                        "result": issue_result,
+                        "tracker_text": issue_text
+                    })
+                
+                # Сохраняем изменения
+                db_session.commit()
+                
+        except Exception as e:
+            logger.error(f"Error processing issue {issue.key}: {e}")
+            db_session.rollback()
+    
+    return notifications

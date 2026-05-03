@@ -1,7 +1,10 @@
+import asyncio
 import logging
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from app.api import closures
 from app.database import engine, Base
+from app.sync import sync_loop
 
 # Configure logging
 logging.basicConfig(
@@ -12,7 +15,22 @@ logging.basicConfig(
 # Create tables
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Road closure feedback Yandex", description="Backend for processing road closure feedback at Yandex Maps")
+# Run database migration
+from app.database import migrate_database
+migrate_database()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Запуск фоновой задачи синхронизации
+    task = asyncio.create_task(sync_loop())
+    yield
+    task.cancel()
+
+app = FastAPI(
+    title="Road closure feedback Yandex",
+    description="Backend for processing road closure feedback at Yandex Maps",
+    lifespan=lifespan
+)
 
 app.include_router(closures.router, prefix="/closures", tags=["closures"])
 

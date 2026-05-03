@@ -12,3 +12,5 @@ class Closure(Base):
     sent_at = Column(DateTime)
     tracker_key = Column(String, nullable=True)
     status = Column(String, nullable=True)
+    result = Column(String, nullable=True)
+    tracker_text = Column(String, nullable=True)

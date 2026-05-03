@@ -17,6 +17,8 @@ class ClosureRead(BaseModel):
     sent_at: datetime
     tracker_key: str | None = None
     status: str | None = None
+    result: str | None = None
+    tracker_text: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
