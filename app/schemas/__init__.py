@@ -24,5 +24,14 @@ class ClosureRead(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-class ClosureStatusUpdate(BaseModel):
-    status: str
+class ClosureUpdate(BaseModel):
+    text: str | None = None
+    messenger: str | None = None
+    chat_id: int | None = None
+    message_id: int | None = None
+    sent_at: datetime | None = None
+    tracker_key: str | None = None
+    status: str | None = None
+    result: str | None = None
+    tracker_text: str | None = None
+    is_answered: bool | None = None

@@ -7,7 +7,7 @@ from datetime import datetime
 
 from app.database import get_db
 from app.models import Closure
-from app.schemas import ClosureCreate, ClosureRead, ClosureStatusUpdate
+from app.schemas import ClosureCreate, ClosureRead, ClosureUpdate
 
 logger = logging.getLogger(__name__)
 
@@ -90,13 +90,16 @@ def delete_closure(closure_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"ok": True}
 
-@router.patch("/{closure_id}/status", response_model=ClosureRead)
-def update_closure_status(closure_id: int, status_update: ClosureStatusUpdate, db: Session = Depends(get_db)):
+@router.patch("/{closure_id}", response_model=ClosureRead)
+def update_closure(closure_id: int, closure_update: ClosureUpdate, db: Session = Depends(get_db)):
     db_closure = db.query(Closure).filter(Closure.id == closure_id).first()
     if db_closure is None:
         raise HTTPException(status_code=404, detail="Closure not found")
     
-    db_closure.status = status_update.status
+    update_data = closure_update.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(db_closure, key, value)
+    
     db.commit()
     db.refresh(db_closure)
     return db_closure
