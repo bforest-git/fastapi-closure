@@ -74,34 +74,32 @@ def sync_tracker_issues(db_session) -> list[dict]:
         return []
     
     notifications = []
-    
+
     for issue in issues:
         try:
             # Получаем данные из тикета
             issue_key = issue.key
-            issue_result = issue.result
+            issue_result = str(issue.result) if issue.result else None
             issue_status = issue.status.key
-            if issue.text:
-                issue_text = issue.text
-            else:
-                issue_text = None
-            
+            issue_text = str(issue.text) if issue.text else None
+
             # Ищем запись в БД по tracker_key
             from app.models import Closure
             closure = db_session.query(Closure).filter(Closure.tracker_key == issue_key).first()
-            
+
             if closure:
                 # Проверяем, изменился ли result
                 old_result = closure.result
                 result_changed = old_result != issue_result
-                
+
                 # Обновляем поля в БД
                 closure.status = issue_status
                 closure.result = issue_result
                 closure.tracker_text = issue_text
-                
+
                 # Если result изменился, добавляем в список уведомлений
                 if result_changed and issue_result is not None:
+                    closure.is_answered = False
                     notifications.append({
                         "chat_id": closure.chat_id,
                         "message_id": closure.message_id,
@@ -110,14 +108,18 @@ def sync_tracker_issues(db_session) -> list[dict]:
                         "tracker_text": issue_text,
                         "closure_id": closure.id
                     })
-                
+
                 # Сохраняем изменения
                 db_session.commit()
-                
+
+            else:
+                logger.warning(
+                    f"[sync_tracker_issues] No closure found in DB for tracker_key={issue_key!r}, skipping"
+                )
+
         except Exception as e:
-            logger.error(f"Error processing issue {issue.key}: {e}")
+            logger.error(f"[sync_tracker_issues] Error processing issue {issue.key}: {e}", exc_info=True)
             db_session.rollback()
-    
 
     try:
         from app.models import Closure
@@ -126,8 +128,11 @@ def sync_tracker_issues(db_session) -> list[dict]:
             Closure.status.isnot(None),
             Closure.result.isnot(None)
         ).all()
-        
+
         for closure in unnotified_closures:
+            already_queued = any(n["closure_id"] == closure.id for n in notifications)
+            if already_queued:
+                continue
             notifications.append({
                 "chat_id": closure.chat_id,
                 "message_id": closure.message_id,
@@ -137,6 +142,6 @@ def sync_tracker_issues(db_session) -> list[dict]:
                 "closure_id": closure.id
             })
     except Exception as e:
-        logger.error(f"Error processing unnotified closures: {e}")
-    
+        logger.error(f"[sync_tracker_issues] Error processing unnotified closures: {e}", exc_info=True)
+
     return notifications

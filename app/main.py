@@ -3,6 +3,7 @@ import logging
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 
+load_dotenv()
 load_dotenv("telegram-bot/.env")
 
 from fastapi import FastAPI
