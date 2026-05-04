@@ -66,19 +66,20 @@ async def db_session(engine):
                 raise
 
     test_app.dependency_overrides[get_db] = override_get_db
-    from app.api.authors import verify_admin_key as authors_verify
-    from app.api.issues import verify_admin_key as issues_verify
-    from app.api.closures import verify_admin_key as closures_verify
+    from app.dependencies import verify_admin_key, api_key_header
+    authors_verify = verify_admin_key
+    issues_verify = verify_admin_key
+    closures_verify = verify_admin_key
 
-    def override_verify_admin_key(api_key: str = Depends(authors.api_key_header)):
+    def override_verify_admin_key(api_key: str = Depends(api_key_header)):
         if api_key != ADMIN_KEY:
             raise HTTPException(status_code=403, detail="Forbidden")
 
-    def override_verify_admin_key_issues(api_key: str = Depends(issues.api_key_header)):
+    def override_verify_admin_key_issues(api_key: str = Depends(api_key_header)):
         if api_key != ADMIN_KEY:
             raise HTTPException(status_code=403, detail="Forbidden")
 
-    def override_verify_admin_key_closures(api_key: str = Depends(closures.api_key_header)):
+    def override_verify_admin_key_closures(api_key: str = Depends(api_key_header)):
         if api_key != ADMIN_KEY:
             raise HTTPException(status_code=403, detail="Forbidden")
 

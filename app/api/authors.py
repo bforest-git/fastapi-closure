@@ -1,5 +1,6 @@
 """API routes for managing authors."""
 # pylint: disable=duplicate-code
+import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -7,9 +8,10 @@ from sqlalchemy import select
 from app.database import get_db
 from app.models import Author
 from app.schemas import AuthorRead, AuthorBanRequest, AuthorCreate
-from app.dependencies import verify_admin_key
+from app.dependencies import verify_admin_key, api_key_header  # noqa: F401
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.post("/ban", response_model=AuthorRead, dependencies=[Depends(verify_admin_key)])
@@ -34,18 +36,22 @@ async def ban_author(data: AuthorBanRequest, db: AsyncSession = Depends(get_db))
 @router.post("/unban", response_model=AuthorRead, dependencies=[Depends(verify_admin_key)])
 async def unban_author(data: AuthorBanRequest, db: AsyncSession = Depends(get_db)):
     """Unban an author by user ID."""
+    logger.info("unban_author called: user_id=%s", data.user_id)
     result = await db.execute(select(Author).where(Author.id == data.user_id))
     author = result.scalar_one_or_none()
 
     if not author:
+        logger.warning("unban_author: author not found for user_id=%s", data.user_id)
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Author not found"
         )
 
+    logger.info("unban_author: found author id=%s is_banned=%s, setting to False", author.id, author.is_banned)
     author.is_banned = False
     await db.commit()
     await db.refresh(author)
+    logger.info("unban_author: after commit author id=%s is_banned=%s", author.id, author.is_banned)
     return author
 
 

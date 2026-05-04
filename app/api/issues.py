@@ -9,7 +9,7 @@ from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.models import Issue
 from app.schemas import IssueRead, IssueUpdate
-from app.dependencies import verify_admin_key
+from app.dependencies import verify_admin_key  # noqa: F401
 
 router = APIRouter()
 

@@ -27,7 +27,7 @@ async def create_closure_with_tracker(db: AsyncSession, closure_data: dict, file
     db.add(db_closure)
     await db.flush()  # получаем id без commit
 
-    # Загружаем author через selectinload, чтобы избежать lazy load в async-контексте
+    # Load the closure with relationships for proper serialization
     result = await db.execute(
         select(Closure)
         .where(Closure.id == db_closure.id)
@@ -43,7 +43,7 @@ async def create_closure_with_tracker(db: AsyncSession, closure_data: dict, file
         logger.error("Не удалось создать тикет в Tracker для closure %d: %s", db_closure.id, e)
         # tracker_key remains None
 
-    await db.commit()  # единственный commit
+    await db.commit()
     await db.refresh(db_closure)
 
     # Clean up uploaded files
