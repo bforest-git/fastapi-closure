@@ -1,79 +1,76 @@
+"""Module for synchronizing tracker issues and sending notifications."""
 import asyncio
-import os
+import logging
 import aiohttp
-from app.database import SessionLocal
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
+from app.database import AsyncSessionLocal
 from app.models import Closure
-from app.tracker import sync_tracker_issues
+from app.services.tracker_service import sync_tracker_issues
+from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 async def sync_loop():
     """Background task: sync tickets every 30 seconds"""
     while True:
         try:
-            loop = asyncio.get_running_loop()
-            db = SessionLocal()
-            try:
-                notifications = await loop.run_in_executor(
-                    None, sync_tracker_issues, db
-                )
+            async with AsyncSessionLocal() as db:
+                notifications = await sync_tracker_issues(db)
                 for notif in notifications:
                     await send_notification(notif, db)
-            finally:
-                db.close()
-        except Exception as e:
-            pass
+                await db.commit()
+        except Exception as e:  # pylint: disable=broad-except
+            logger.exception("Ошибка в sync_loop: %s", e)
         await asyncio.sleep(30)
 
 async def send_notification(notif: dict, db):
-    """Send notification to user"""
+    """Send notification to user via bot webhook"""
     closure_id = notif.get("closure_id")
-    messenger = notif.get("messenger", "telegram")
-    if messenger == "telegram":
-        success = await send_telegram_notification(notif)
-        if success:
-            if closure_id:
-                closure = db.query(Closure).filter(Closure.id == closure_id).first()
-                if closure:
-                    closure.is_answered = True
-                    db.commit()
-        return success
+    if closure_id:
+        # Use async SQLAlchemy
+        result = await db.execute(
+            select(Closure)
+            .where(Closure.id == closure_id)
+            .options(selectinload(Closure.author), selectinload(Closure.issue))
+        )
+        closure = result.scalar_one_or_none()
+        if closure and closure.author:
+            messenger = closure.author.messenger
+            if messenger == "telegram":
+                # Update notif with author data
+                notif["chat_id"] = closure.author.chat_id
+                success = await send_bot_notification(notif)
+                if success:
+                    # Update is_answered flag in Issue table
+                    if closure.issue:
+                        closure.issue.is_answered = True
+                        await db.commit()
+                return success
     return False
 
-async def send_telegram_notification(notif: dict):
-    """Send notification to Telegram via reply"""
-    import ssl
-
-    bot_token = os.getenv("BOT_TOKEN")
-    if not bot_token:
+async def send_bot_notification(notif: dict):
+    """Send notification to bot via webhook"""
+    bot_url = settings.bot_url
+    if not bot_url:
+        logger.warning("BOT_URL not set, skipping notification")
         return False
 
-    chat_id = notif["chat_id"]
-    message_id = notif["message_id"]
-    result = notif["result"]
-    tracker_text = notif.get("tracker_text")
-
-    if tracker_text:
-        text = f"{result}\n{tracker_text}"
-    else:
-        text = result
-
-    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
     payload = {
-        "chat_id": chat_id,
-        "text": text,
-        "reply_to_message_id": message_id
+        "chat_id": notif["chat_id"],
+        "message_id": notif["message_id"],
+        "result": notif["result"],
+        "tracker_text": notif.get("tracker_text"),
+        "closure_id": notif.get("closure_id")
     }
 
-    ssl_context = ssl.create_default_context()
-    ssl_context.check_hostname = False
-    ssl_context.verify_mode = ssl.CERT_NONE
-
     try:
-        connector = aiohttp.TCPConnector(ssl=ssl_context)
-        async with aiohttp.ClientSession(connector=connector) as session:
-            async with session.post(url, json=payload) as resp:
-                body = await resp.text()
+        async with aiohttp.ClientSession() as session:
+            async with session.post(f"{bot_url}/webhook/notification", json=payload) as resp:
                 if resp.status != 200:
+                    logger.error("Bot notification failed with status %s", resp.status)
                     return False
                 return True
-    except Exception as exc:
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.error("Ошибка отправки уведомления боту: %s", exc)
         return False

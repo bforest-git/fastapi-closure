@@ -18,3 +18,7 @@ fastapi.log
 telegram-bot.log
 app/__pycache__/main.cpython-313.pyc
 app/api/__pycache__/__init__.cpython-313.pyc
+
+# Logs
+logs/
+*.log

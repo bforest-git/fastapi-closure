@@ -1,5 +1,4 @@
-"""Module for interacting with Yandex Tracker API."""
-# pylint: disable=duplicate-code
+"""Service module for interacting with Yandex Tracker API."""
 import io
 import asyncio
 import logging
@@ -8,21 +7,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from app.config import settings
-from app.models import Issue, Closure
+from app.models import Issue, Closure, Author
 
 logger = logging.getLogger(__name__)
 
-_TRACKER_CLIENT: Startrek | None = None  # pylint: disable=invalid-name
+_tracker_client: Startrek | None = None  # pylint: disable=invalid-name
+
 
 def get_tracker_client() -> Startrek:
     """Get or create a Yandex Tracker client instance."""
-    global _TRACKER_CLIENT  # pylint: disable=global-statement
-    if _TRACKER_CLIENT is None:
+    global _tracker_client  # pylint: disable=global-statement
+    if _tracker_client is None:
         tracker_token = settings.tracker_token
         if not tracker_token:
             logger.warning("TRACKER_TOKEN не задан — интеграция с Tracker отключена")
-        _TRACKER_CLIENT = Startrek('Startrek', token=tracker_token)
-    return _TRACKER_CLIENT
+        _tracker_client = Startrek('Startrek', token=tracker_token)
+    return _tracker_client
 
 
 async def create_tracker_issue(closure, db_session: AsyncSession) -> str:
@@ -54,16 +54,43 @@ async def create_tracker_issue(closure, db_session: AsyncSession) -> str:
     description = f"Отправлено {closure.sent_at}\n\n{closure.text}"
 
     def create_issue():
-        return client.issues.create(
-            queue=tracker_queue,
-            summary=summary,
-            description=description,
-            tags=[f"{closure.author.messenger}"],
-            clientId=closure.author.id
+        logger.info(
+            "Вызов issues.create: queue=%r, summary=%r, tags=%r, clientId=%r",
+            tracker_queue, summary, [closure.author.messenger], closure.author.id,
         )
+        try:
+            result = client.issues.create(
+                queue=tracker_queue,
+                summary=summary,
+                description=description,
+                tags=[f"{closure.author.messenger}"],
+                clientId=closure.author.id
+            )
+            logger.info("issues.create вернул: %r (key=%s)", result, getattr(result, 'key', 'N/A'))
+            return result
+        except Exception as exc:  # pylint: disable=broad-except
+            response = getattr(exc, 'response', None)
+            if response is not None:
+                try:
+                    body = response.json()
+                except Exception:  # pylint: disable=broad-except
+                    body = getattr(response, 'text', str(response))
+                logger.error(
+                    "Ошибка API Tracker: %s — HTTP %s — тело: %s",
+                    type(exc).__name__, getattr(response, 'status_code', '?'), body,
+                )
+            else:
+                logger.error("Ошибка Tracker (без HTTP-ответа): %s: %s", type(exc).__name__, exc)
+            raise
 
     # Run the synchronous Startrek SDK call in an executor
     issue = await asyncio.get_running_loop().run_in_executor(None, create_issue)
+
+    if issue is None:
+        raise RuntimeError(
+            f"Startrek SDK вернул None при создании тикета для closure {closure.id}. "
+            "Проверьте TRACKER_TOKEN, TRACKER_QUEUE и права доступа к Яндекс Трекеру."
+        )
 
     # Create Issue record in local database
     await create_issue_record(db_session, closure, issue.key)
@@ -80,10 +107,9 @@ async def create_issue_record(  # pylint: disable=unused-argument
 
     Parameters:
     - db_session: SQLAlchemy async session for working with the database
-    - closure (Closure): ORM model Closure object
+    - closure (Closure): ORM model Closure object (unused, reserved for future use)
     - issue_key (str): Key of the created ticket in Tracker
     """
-
     # Create new Issue object
     issue_obj = Issue(
         tracker_key=issue_key,
@@ -99,14 +125,95 @@ async def create_issue_record(  # pylint: disable=unused-argument
     await db_session.flush()
 
 
+async def attach_files_to_issue(issue_key: str, files: list = None):
+    """
+    Attach files to a Yandex Tracker issue and create a comment with those attachments.
+
+    Args:
+        issue_key (str): The key of the issue to attach files to
+        files (list): List of UploadFile objects from FastAPI
+    """
+    tracker_token = settings.tracker_token
+
+    if not tracker_token:
+        raise EnvironmentError("TRACKER_TOKEN environment variable is not set")
+
+    if files is None:
+        files = []
+    if not files:
+        return
+
+    client = get_tracker_client()
+
+    class NamedBytesIO(io.BytesIO):  # pylint: disable=missing-class-docstring
+        def __init__(self, data: bytes, name: str):
+            super().__init__(data)
+            self.name = name
+
+    file_objects = []
+    for upload_file in files:
+        try:
+            content = await upload_file.read()
+            if not content:
+                continue
+            filename = upload_file.filename or "unnamed_file"
+            file_objects.append(NamedBytesIO(content, filename))
+        except Exception as e:  # pylint: disable=broad-except
+            logger.exception("Ошибка при чтении файла %s: %s", upload_file.filename, e)
+
+    if not file_objects:
+        return
+
+    def create_comment_with_attachments():
+        result = client.issues[issue_key].comments.create(
+            text="Closure media files",
+            attachments=file_objects,
+        )
+        return result
+
+    try:
+        await asyncio.get_running_loop().run_in_executor(None, create_comment_with_attachments)
+    except Exception as e:  # pylint: disable=broad-except
+        logger.exception("Ошибка при прикреплении файлов к тикету %s: %s", issue_key, e)
+
+
+async def create_tracker_issue_with_attachments(
+        closure, db_session: AsyncSession, files=None) -> str:
+    """
+    Creates a ticket in Yandex Tracker and attaches files if provided.
+
+    Parameters:
+    - closure (Closure): ORM model Closure object
+    - db_session: SQLAlchemy async session
+    - files: Optional list of UploadFile objects
+
+    Returns:
+    - str: Key of the created ticket in the format "QUEUE-123".
+    """
+    # Create tracker issue
+    tracker_key = await create_tracker_issue(closure, db_session)
+
+    # If files were uploaded, attach them to the tracker issue
+    if files and tracker_key:
+        try:
+            await attach_files_to_issue(tracker_key, files)
+        except Exception as e:  # pylint: disable=broad-except
+            logger.error(
+                "Не удалось прикрепить файлы к тикету в Tracker для closure %d: %s",
+                closure.id, e
+            )
+            # Continue even if file attachment fails
+
+    return tracker_key
+
+
 async def sync_tracker_issues(  # pylint: disable=too-many-branches,too-many-statements,too-many-locals
-        db_session: AsyncSession, closure=None) -> list[dict]:  # pylint: disable=unused-argument
+        db_session: AsyncSession) -> list[dict]:
     """
     Synchronizes tickets from Yandex Tracker with the local database.
 
     Parameters:
     - db_session: SQLAlchemy async session for working with the database
-    - closure: Unused parameter for compatibility
 
     Returns:
     - list[dict]: List of dictionaries with data for user notifications
@@ -165,9 +272,6 @@ async def sync_tracker_issues(  # pylint: disable=too-many-branches,too-many-sta
                 db_session.add(issue_obj)
                 await db_session.flush()
 
-                # Set the issue_id on the closure
-                # We'll update this when we find the closure below
-
             # Find closure associated with this issue
             result = await db_session.execute(
                 select(Closure)
@@ -193,19 +297,16 @@ async def sync_tracker_issues(  # pylint: disable=too-many-branches,too-many-sta
                     author_id = issue.clientId if issue.clientId else None
 
                     if author_id:
-                        # Find author in DB by ID
-                        from app.models import Author  # pylint: disable=import-outside-toplevel
-                        result = await db_session.execute(
+                        db_result = await db_session.execute(
                             select(Author).where(Author.id == author_id)
                         )
-                        author = result.scalar_one_or_none()
+                        author = db_result.scalar_one_or_none()
 
                         if author:
                             # Ban the author in DB first
                             author.is_banned = True
                             logger.info(
-                                "Author %s has been banned due to ban_author tag",
-                                author.id
+                                "Author %s has been banned due to ban_author tag", author.id
                             )
 
                             # Add comment to Tracker
@@ -213,13 +314,10 @@ async def sync_tracker_issues(  # pylint: disable=too-many-branches,too-many-sta
                                 client.issues[key].comments.create(
                                     text="Автор сообщения успешно заблокирован"
                                 )
-                            await asyncio.get_running_loop().run_in_executor(
-                                None, add_comment
-                            )
+                            await asyncio.get_running_loop().run_in_executor(None, add_comment)
                     else:
                         logger.warning(
-                            "Could not find clientId for issue %s with ban_author tag",
-                            issue_key
+                            "Could not find clientId for issue %s with ban_author tag", issue_key
                         )
 
                 # If result has changed, add to notification list
@@ -233,9 +331,6 @@ async def sync_tracker_issues(  # pylint: disable=too-many-branches,too-many-sta
                         "closure_id": closure.id
                     })
 
-            else:
-                # No closure found for this issue
-                pass
         except Exception as e:  # pylint: disable=broad-except
             logger.exception("Ошибка при обработке тикета %s: %s", issue_key, e)
             await db_session.rollback()
@@ -244,7 +339,7 @@ async def sync_tracker_issues(  # pylint: disable=too-many-branches,too-many-sta
     try:
         result = await db_session.execute(
             select(Issue)
-            .where(Issue.is_answered.is_(False))  # pylint: disable=singleton-comparison
+            .where(Issue.is_answered.is_(False))
             .where(Issue.status.isnot(None))
             .where(Issue.result.isnot(None))
         )
@@ -276,54 +371,3 @@ async def sync_tracker_issues(  # pylint: disable=too-many-branches,too-many-sta
     await db_session.commit()
 
     return notifications
-
-
-async def attach_files_to_issue(issue_key: str, files: list = None):
-    """
-    Attach files to a Yandex Tracker issue and create a comment with those attachments.
-    Args:
-        issue_key (str): The key of the issue to attach files to
-        files (list): List of UploadFile objects from FastAPI
-    """
-    tracker_token = settings.tracker_token
-
-    if not tracker_token:
-        raise EnvironmentError("TRACKER_TOKEN environment variable is not set")
-
-    if files is None:
-        files = []
-    if not files:
-        return
-
-    client = get_tracker_client()
-
-    class NamedBytesIO(io.BytesIO):  # pylint: disable=missing-class-docstring
-        def __init__(self, data: bytes, name: str):
-            super().__init__(data)
-            self.name = name
-
-    file_objects = []
-    for upload_file in files:
-        try:
-            content = await upload_file.read()
-            if not content:
-                continue
-            filename = upload_file.filename or "unnamed_file"
-            file_objects.append(NamedBytesIO(content, filename))
-        except Exception as e:  # pylint: disable=broad-except
-            logger.exception("Ошибка при чтении файла %s: %s", upload_file.filename, e)
-
-    if not file_objects:
-        return
-
-    def create_comment_with_attachments():
-        result = client.issues[issue_key].comments.create(
-            text="Closure media files",
-            attachments=file_objects,
-        )
-        return result
-
-    try:
-        await asyncio.get_running_loop().run_in_executor(None, create_comment_with_attachments)
-    except Exception as e:  # pylint: disable=broad-except
-        logger.exception("Ошибка при прикреплении файлов к тикету %s: %s", issue_key, e)

@@ -1,68 +1,182 @@
-# FastAPI Project
+# Road Closure Monitoring System
 
-FastAPI project structure.
+A system for collecting and processing road closure reports via Telegram bot with Yandex.Tracker integration.
+
+## Tech Stack
+
+- **FastAPI** — REST API backend
+- **SQLAlchemy** (async) + **aiosqlite** — async database ORM
+- **Alembic** — database migrations
+- **Pydantic Settings** — configuration management
+- **aiogram** — Telegram bot framework
+- **startrek-client** — Yandex.Tracker API client
+- **slowapi** — rate limiting
 
 ## Project Structure
 
 ```
 .
 ├── app/
-│   ├── __init__.py
-│   ├── main.py
+│   ├── main.py              # Application entry point, startup events
+│   ├── config.py            # Settings via pydantic-settings
+│   ├── dependencies.py      # FastAPI dependencies
+│   ├── sync.py              # Background sync with Yandex.Tracker (every 30s)
+│   ├── tracker.py           # Tracker client factory
 │   ├── api/
-│   │   ├── __init__.py
-│   │   └── closures.py
-│   ├── models/
-│   │   └── __init__.py
-│   ├── schemas/
-│   │   └── __init__.py
-│   ├── database/
-│   │   └── __init__.py
-│   ├── sync.py
-│   └── tracker.py
-├── main.py
+│   │   ├── closures.py      # Closure endpoints
+│   │   ├── authors.py       # Author management endpoints
+│   │   └── issues.py        # Tracker issue endpoints
+│   ├── models/              # SQLAlchemy ORM models
+│   ├── schemas/             # Pydantic schemas
+│   ├── database/            # Database session setup
+│   └── services/            # Business logic layer
+├── telegram-bot/
+│   ├── bot.py               # Telegram bot (aiogram + webhook server)
+│   ├── requirements.txt
+│   └── .env.example
+├── alembic/                 # Database migrations
+├── tests/                   # Test suite
 ├── requirements.txt
-├── readme.md
-└── telegram-bot/
-    ├── bot.py
-    ├── requirements.txt
-    └── .env.example
+├── requirements-dev.txt
+└── main.py                  # Convenience runner
 ```
+
+## Quick Start
+
+### Prerequisites
+
+- Python 3.11+
+- Telegram Bot Token (from [@BotFather](https://t.me/BotFather))
+- Yandex.Tracker OAuth token and queue key
+
+### Installation
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/bforest-git/fastapi-closure.git
+   cd fastapi-closure
+   ```
+
+2. Create and activate a virtual environment:
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+   ```
+
+3. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. Create a `.env` file in the project root (see [Environment Variables](#environment-variables)).
+
+5. Apply database migrations:
+   ```bash
+   alembic upgrade head
+   ```
+
+6. Start the FastAPI backend:
+   ```bash
+   python main.py
+   # or
+   uvicorn app.main:app --reload
+   ```
+
+7. In a separate terminal, start the Telegram bot:
+   ```bash
+   cd telegram-bot
+   pip install -r requirements.txt
+   cp .env.example .env  # fill in BOT_TOKEN and API_URL
+   python bot.py
+   ```
+
+## Environment Variables
+
+Create a `.env` file in the project root:
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `ADMIN_API_KEY` | Secret key for admin endpoints | `supersecretkey` |
+| `HOST` | Server host | `0.0.0.0` |
+| `PORT` | Server port | `8000` |
+| `DATABASE_URL` | SQLAlchemy async database URL | `sqlite+aiosqlite:///./closures.db` |
+| `TRACKER_TOKEN` | Yandex.Tracker OAuth token | `y0_AgAAAA...` |
+| `TRACKER_QUEUE` | Yandex.Tracker queue key | `ROADS` |
+| `BOT_TOKEN` | Telegram bot token | `123456:ABC-DEF...` |
+
+For the Telegram bot, create `telegram-bot/.env`:
+
+| Variable | Description |
+|----------|-------------|
+| `BOT_TOKEN` | Telegram bot token |
+| `API_URL` | FastAPI backend URL (e.g. `http://localhost:8000`) |
+| `ADMIN_API_KEY` | Admin API key (same as backend) |
 
 ## API Documentation
 
-- Swagger UI: `http://localhost:8000/docs`
-- ReDoc: `http://localhost:8000/redoc`
+Interactive docs available at:
+- **Swagger UI**: http://localhost:8000/docs
+- **ReDoc**: http://localhost:8000/redoc
 
-## Application Deployment
+### Endpoints
 
-The application consists of three main components:
-1. FastAPI backend for data processing
-2. Synchronization with Yandex.Tracker for creating and tracking tickets
-3. Telegram bot for receiving messages from users
+#### Closures
+| Method | Endpoint | Description | Auth |
+|--------|----------|-------------|------|
+| `POST` | `/closures/` | Submit a new closure report | — |
+| `GET` | `/closures/` | List all closures | — |
+| `GET` | `/closures/{id}` | Get closure by ID | — |
+| `PATCH` | `/closures/{id}` | Update closure | Admin |
+| `DELETE` | `/closures/{id}` | Delete closure | Admin |
 
-### Running all components
+#### Authors
+| Method | Endpoint | Description | Auth |
+|--------|----------|-------------|------|
+| `POST` | `/authors/` | Create author | — |
+| `GET` | `/authors/` | List authors | — |
+| `GET` | `/authors/search` | Search by messenger + external_id | — |
+| `GET` | `/authors/banned` | List banned authors | — |
+| `POST` | `/authors/ban` | Ban author | Admin |
+| `POST` | `/authors/unban` | Unban author | Admin |
 
-For the application to work properly, you need to run:
-1. FastAPI backend (from the root directory)
-2. Telegram bot (from the telegram-bot directory)
+#### Issues
+| Method | Endpoint | Description | Auth |
+|--------|----------|-------------|------|
+| `GET` | `/issues/` | List tracker issues | — |
+| `GET` | `/issues/{key}` | Get issue by key | — |
+| `PATCH` | `/issues/{key}` | Update issue | Admin |
 
-Both components must run simultaneously for correct message processing.
+> **Admin endpoints** require `X-API-Key: <ADMIN_API_KEY>` header.
+
+## Running Tests
 
 ```bash
-python3 main.py
-
-cd telegram-bot
-python3 bot.py
+pip install -r requirements-dev.txt
+pytest
 ```
 
-### Using the application
+## Database Migrations
 
-1. Users send messages to the Telegram bot with hashtags:
-   - `#перекрытие`
-   - `#roads`
-   - `#closure`
+Create a new migration:
+```bash
+alembic revision --autogenerate -m "description"
+```
 
-2. Messages are automatically saved to the database and tickets are created in Yandex.Tracker
+Apply migrations:
+```bash
+alembic upgrade head
+```
 
-3. When tickets are updated in Yandex.Tracker, changes are synchronized with the database and notifications are sent to users in Telegram
+## How It Works
+
+1. Users send messages to the Telegram bot with hashtags: `#перекрытие`, `#roads`, or `#closure`
+2. The bot supports media groups (photo/video albums) with 1-second buffering
+3. Messages are saved to the database and a ticket is created in Yandex.Tracker
+4. A background task syncs ticket statuses every 30 seconds
+5. When a ticket status changes, the bot notifies the original user via reply
+
+## Author
+
+**Yaroslav Kozak**
+- GitHub: [@bforest-git](https://github.com/bforest-git)
+- Email: kozak.iav@phystech.edu

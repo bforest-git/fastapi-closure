@@ -1,40 +1,32 @@
-from sqlalchemy import create_engine, text
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
-SQLALCHEMY_DATABASE_URL = "sqlite:///./closures.db"
+"""Database engine, session factory and base model for the application."""
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy.orm import DeclarativeBase
 
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
+from app.config import settings
+
+
+engine = create_async_engine(
+    settings.database_url,
+    echo=False,
 )
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+AsyncSessionLocal = async_sessionmaker(  # pylint: disable=invalid-name
+    bind=engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+)
 
-def migrate_database():
-    """Adds new columns to the closures table if they are missing"""
-    try:
-        with engine.connect() as conn:
-            # Check for the existence of the result column
-            result = conn.execute(text("PRAGMA table_info(closures)")).fetchall()
-            columns = [row[1] for row in result]
-            
-            if 'result' not in columns:
-                conn.execute(text("ALTER TABLE closures ADD COLUMN result TEXT"))
-                conn.commit()
-            
-            if 'tracker_text' not in columns:
-                conn.execute(text("ALTER TABLE closures ADD COLUMN tracker_text TEXT"))
-                conn.commit()
-                
-            if 'is_answered' not in columns:
-                conn.execute(text("ALTER TABLE closures ADD COLUMN is_answered BOOLEAN DEFAULT 0 NOT NULL"))
-                conn.commit()
-                
-    except Exception as e:
-        pass
+
+class Base(DeclarativeBase):  # pylint: disable=too-few-public-methods
+    """Declarative base class for all ORM models."""
+
+
+async def get_db():
+    """Yield an async database session, committing on success or rolling back on error."""
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
