@@ -101,37 +101,37 @@ async def get_or_create_author(chat_id: int, messenger: str = "telegram") -> dic
                     "chat_id": chat_id
                 }
             )
-        
-        if search_response.status_code == 200:
-            return search_response.json()
-        elif search_response.status_code == 404:
-            # Author not found, create new author
-            create_response = await client.post(
-                f"{FASTAPI_URL}/authors/",
-                json={
-                    "messenger": messenger,
-                    "chat_id": chat_id
-                }
-            )
-            if create_response.status_code == 201:
-                return create_response.json()
-            elif create_response.status_code == 409:
-                # Author already exists, get existing author
-                retry_response = await client.get(
-                    f"{FASTAPI_URL}/authors/search",
-                    params={"messenger": messenger, "chat_id": str(chat_id)}
+
+            if search_response.status_code == 200:
+                return search_response.json()
+            elif search_response.status_code == 404:
+                # Author not found, create new author
+                create_response = await client.post(
+                    f"{FASTAPI_URL}/authors/",
+                    json={
+                        "messenger": messenger,
+                        "chat_id": chat_id
+                    }
                 )
-                if retry_response.status_code == 200:
-                    return retry_response.json()
+                if create_response.status_code == 201:
+                    return create_response.json()
+                elif create_response.status_code == 409:
+                    # Author already exists, get existing author
+                    retry_response = await client.get(
+                        f"{FASTAPI_URL}/authors/search",
+                        params={"messenger": messenger, "chat_id": str(chat_id)}
+                    )
+                    if retry_response.status_code == 200:
+                        return retry_response.json()
+                    else:
+                        logger.error(f"API error when searching for existing author: {retry_response.status_code} - {retry_response.text}")
+                        return None
                 else:
-                    logger.error(f"API error when searching for existing author: {retry_response.status_code} - {retry_response.text}")
+                    logger.error(f"API error when creating author: {create_response.status_code} - {create_response.text}")
                     return None
             else:
-                logger.error(f"API error when creating author: {create_response.status_code} - {create_response.text}")
+                logger.error(f"API error when searching for author: {search_response.status_code} - {search_response.text}")
                 return None
-        else:
-            logger.error(f"API error when searching for author: {search_response.status_code} - {search_response.text}")
-            return None
     except Exception as e:
         logger.exception("Ошибка при поиске/создании автора: %s", e)
         return None
@@ -241,7 +241,11 @@ async def process_media_group(media_group_id):
         # Get text from first message with hashtags
         text = first_message_with_hashtags.text or first_message_with_hashtags.caption or ""
         cleaned_text = remove_closure_hashtags(text)
-        
+
+        # If text is empty after removing hashtags, use a placeholder
+        if not cleaned_text:
+            cleaned_text = "(без описания)"
+
         # Get or create author
         author = await get_or_create_author(first_message_with_hashtags.chat.id, "telegram")
         if not author:
@@ -331,7 +335,11 @@ async def closure_handler(message: types.Message):
     try:
         # Remove hashtags from text
         cleaned_text = remove_closure_hashtags(text)
-        
+
+        # If text is empty after removing hashtags, use a placeholder
+        if not cleaned_text:
+            cleaned_text = "(без описания)"
+
         # Get or create author
         author = await get_or_create_author(message.chat.id, "telegram")
         if not author:

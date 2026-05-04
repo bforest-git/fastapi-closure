@@ -2,6 +2,8 @@
 # pylint: disable=duplicate-code
 import logging
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from app.models import Closure
 from app.services.tracker_service import create_tracker_issue_with_attachments
 
@@ -24,7 +26,14 @@ async def create_closure_with_tracker(db: AsyncSession, closure_data: dict, file
     db_closure = Closure(**closure_data)
     db.add(db_closure)
     await db.flush()  # получаем id без commit
-    await db.refresh(db_closure)
+
+    # Загружаем author через selectinload, чтобы избежать lazy load в async-контексте
+    result = await db.execute(
+        select(Closure)
+        .where(Closure.id == db_closure.id)
+        .options(selectinload(Closure.author))
+    )
+    db_closure = result.scalar_one()
 
     # Attempt to create a ticket in Yandex Tracker
     try:
